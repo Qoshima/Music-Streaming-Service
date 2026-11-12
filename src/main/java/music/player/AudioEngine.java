@@ -7,7 +7,6 @@ import be.tarsos.dsp.io.jvm.AudioPlayer;
 
 import music.adapter.AudioSource;
 import music.adapter.FfmpegAudioAdapter;
-
 import music.decorator.BaseAudioProcessor;
 import music.decorator.EchoDecorator;
 import music.decorator.FadeInDecorator;
@@ -16,77 +15,90 @@ import java.nio.file.Path;
 
 public class AudioEngine {
 
-
-    public void setFade(boolean enabled) {
-        fade.setEnabled(enabled);
-        System.out.println("Fade In: " +
-                (enabled ? "ON" : "OFF"));
-    }
-
-    private final AudioSource source =
-            new FfmpegAudioAdapter();
-
-    private final EchoDecorator echo =
-            new EchoDecorator(new BaseAudioProcessor());
-
-    private final FadeInDecorator fade =
-            new FadeInDecorator(echo);
-
+    private final AudioSource source = new FfmpegAudioAdapter();
     private final Object pauseLock = new Object();
 
     private volatile AudioDispatcher dispatcher;
     private volatile Thread worker;
+
+    private volatile EchoDecorator echo;
+    private volatile FadeInDecorator fade;
+
+    private volatile boolean echoEnabled;
+    private volatile boolean fadeEnabled;
     private volatile boolean paused;
     private volatile boolean stopping;
 
-    public void play(Path file) throws Exception {
+    public synchronized void play(Path file) throws Exception {
         stop();
 
         AudioDispatcher newDispatcher = source.open(file);
-        echo.reset();
-        fade.reset();
+
+        // Create a fresh Decorator chain for every track.
+        EchoDecorator newEcho =
+                new EchoDecorator(new BaseAudioProcessor());
+
+        FadeInDecorator newFade =
+                new FadeInDecorator(newEcho);
+
+        newEcho.setEnabled(echoEnabled);
+        newFade.setEnabled(fadeEnabled);
 
         stopping = false;
         paused = false;
 
-        // Pause processing before sending samples to speakers.
-        newDispatcher.addAudioProcessor(new AudioProcessor() {
-            @Override
-            public boolean process(AudioEvent event) {
-                synchronized (pauseLock) {
-                    while (paused && !stopping) {
-                        try {
-                            pauseLock.wait();
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            return false;
+        try {
+            // Pause without terminating the audio stream.
+            newDispatcher.addAudioProcessor(new AudioProcessor() {
+                @Override
+                public boolean process(AudioEvent event) {
+                    synchronized (pauseLock) {
+                        while (paused && !stopping) {
+                            try {
+                                pauseLock.wait();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return false;
+                            }
                         }
                     }
+
+                    return !stopping;
                 }
-                return !stopping;
-            }
 
-            @Override
-            public void processingFinished() {
-            }
-        });
+                @Override
+                public void processingFinished() {}
+            });
 
-        newDispatcher.addAudioProcessor(fade);
-        newDispatcher.addAudioProcessor(
-                new AudioPlayer(newDispatcher.getFormat())
-        );
+            // Apply both effects through one Decorator chain.
+            newDispatcher.addAudioProcessor(newFade);
 
+            // Send processed audio to the speakers.
+            newDispatcher.addAudioProcessor(
+                    new AudioPlayer(newDispatcher.getFormat())
+            );
+        } catch (Exception e) {
+            newDispatcher.stop();
+            throw e;
+        }
+
+        echo = newEcho;
+        fade = newFade;
         dispatcher = newDispatcher;
 
         Thread newWorker = new Thread(() -> {
             try {
                 newDispatcher.run();
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 System.err.println(
-                        "Playback error: " + e.getMessage());
+                        "Playback error: " + e.getMessage()
+                );
             } finally {
                 if (dispatcher == newDispatcher) {
                     dispatcher = null;
+                    worker = null;
+                    echo = null;
+                    fade = null;
                 }
             }
         }, "Audio-Playback");
@@ -106,28 +118,50 @@ public class AudioEngine {
 
     public void resume() {
         paused = false;
+
         synchronized (pauseLock) {
             pauseLock.notifyAll();
         }
+
         System.out.println("Resumed");
     }
 
     public void setEcho(boolean enabled) {
-        echo.setEnabled(enabled);
-        System.out.println("Echo: " +
-                (enabled ? "ON" : "OFF"));
+        echoEnabled = enabled;
+
+        EchoDecorator current = echo;
+        if (current != null) {
+            current.setEnabled(enabled);
+        }
+
+        System.out.println(
+                "Echo: " + (enabled ? "ON" : "OFF")
+        );
     }
 
-    public void stop() {
-        AudioDispatcher oldDispatcher = dispatcher;
-        Thread oldWorker = worker;
+    public void setFade(boolean enabled) {
+        fadeEnabled = enabled;
 
+        FadeInDecorator current = fade;
+        if (current != null) {
+            current.setEnabled(enabled);
+        }
+
+        System.out.println(
+                "Fade In: " + (enabled ? "ON" : "OFF")
+        );
+    }
+
+    public synchronized void stop() {
         stopping = true;
         paused = false;
 
         synchronized (pauseLock) {
             pauseLock.notifyAll();
         }
+
+        AudioDispatcher oldDispatcher = dispatcher;
+        Thread oldWorker = worker;
 
         if (oldDispatcher != null) {
             oldDispatcher.stop();
@@ -136,7 +170,7 @@ public class AudioEngine {
         if (oldWorker != null &&
                 oldWorker != Thread.currentThread()) {
             try {
-                oldWorker.join(1000);
+                oldWorker.join(2000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -144,5 +178,7 @@ public class AudioEngine {
 
         dispatcher = null;
         worker = null;
+        echo = null;
+        fade = null;
     }
 }
