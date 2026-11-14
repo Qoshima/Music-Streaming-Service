@@ -1,5 +1,6 @@
 package music;
 
+import music.data.MusicDataLoader;
 import music.facade.MusicLibraryFacade;
 import music.model.MusicCatalog;
 import music.model.Track;
@@ -10,22 +11,18 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
-import java.util.stream.Collectors;
 
 public class Main2 {
     public static void main(String[] args) {
         MusicCatalog catalog = new MusicCatalog();
         MusicLibraryFacade facade = new MusicLibraryFacade(catalog);
 
+        MusicDataLoader.loadInitialData(catalog); 
+        
         // Setup mock observer 
         facade.registerObserver(track -> System.out.println("[LYRICS]: " + track.getLyrics()));
         // later will be changed to:
         // facade.registerObserver(new LyricsDisplay());
-
-        catalog.addTrack(new Track("Test1", "Artist 1", Path.of("music/test.mp3"), "La la la..."));
-        catalog.addTrack(new Track("Test2", "Artist 2", Path.of("music/test.flac"), "Na na na..."));
-        catalog.addTrack(new Track("Test3", "Artist 3", Path.of("music/test.m4a"), "Do do do..."));
-        catalog.addTrack(new Track("Test4", "Artist 4", Path.of("music/test.webm"), "Beep boop..."));
 
         System.out.println("=== Music Streaming Service ===");
         System.out.println("Commands:");
