@@ -1,0 +1,39 @@
+@startuml
+!theme plain
+left to right direction
+skinparam linetype ortho
+skinparam shadowing false
+title Builder Pattern
+
+class MusicLibraryFacade {
+    +buildAndSavePlaylist(name: String, titles: List<String>): void
+}
+
+class PlaylistBuilder {
+    -name: String
+    -tracks: List<Track>
+    +setName(name: String): PlaylistBuilder
+    +addTrack(track: Track): PlaylistBuilder
+    +build(): Playlist
+}
+
+class Playlist {
+    -name: String
+    -tracks: List<Track>
+    +getName(): String
+    +getTracks(): List<Track>
+}
+
+class Track {
+    -title: String
+    -artist: String
+    -filePath: Path
+    -lyrics: String
+}
+
+MusicLibraryFacade ..> PlaylistBuilder : uses
+PlaylistBuilder ..> Playlist : creates
+PlaylistBuilder --> "0..*" Track : collects
+Playlist "1" o-- "1..*" Track : contains
+
+@enduml

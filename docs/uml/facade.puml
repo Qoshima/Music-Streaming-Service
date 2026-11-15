@@ -1,0 +1,54 @@
+@startuml
+!theme plain
+left to right direction
+skinparam linetype ortho
+skinparam shadowing false
+title Facade Pattern
+
+class Main {
+    +main(args: String[]): void
+}
+
+class MusicLibraryFacade {
+    -catalog: MusicCatalog
+    -audioEngine: AudioEngine
+    -youtubeImporter: TrackImporter
+    +playTrack(title: String): void
+    +playPlaylist(name: String): void
+    +playNextInPlaylist(): void
+    +buildAndSavePlaylist(name: String, titles: List<String>): void
+    +importFromYouTube(url: String): void
+    +pause(): void
+    +resume(): void
+    +stop(): void
+    +setVolume(percent: int): void
+}
+
+class MusicCatalog {
+    +findTrackByTitle(title: String): Track
+    +findPlaylistByName(name: String): Playlist
+    +savePlaylist(playlist: Playlist): void
+}
+
+class AudioEngine {
+    +play(file: Path): void
+    +pause(): void
+    +resume(): void
+    +stop(): void
+}
+
+class PlaylistBuilder {
+    +build(): Playlist
+}
+
+interface TrackImporter {
+    +importTrack(url: String): Track
+}
+
+Main --> MusicLibraryFacade : calls
+MusicLibraryFacade --> MusicCatalog : manages
+MusicLibraryFacade *-- AudioEngine : controls
+MusicLibraryFacade ..> PlaylistBuilder : creates
+MusicLibraryFacade --> TrackImporter : imports
+
+@enduml

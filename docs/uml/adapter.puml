@@ -1,0 +1,56 @@
+@startuml
+!theme plain
+left to right direction
+skinparam linetype ortho
+skinparam shadowing false
+title Adapter Pattern
+
+package "Audio Decoding" {
+    interface AudioSource {
+        +open(file: Path): AudioDispatcher
+    }
+
+    class FfmpegAudioAdapter {
+        -decoder: FfmpegDecoder
+        +open(file: Path): AudioDispatcher
+    }
+
+    class FfmpegDecoder {
+        +decode(filePath: String, sampleRate: int, bufferSize: int, overlap: int): AudioDispatcher
+    }
+
+    class AudioEngine {
+        -source: AudioSource
+        +play(file: Path): void
+    }
+
+    FfmpegAudioAdapter ..|> AudioSource
+    AudioEngine --> AudioSource : uses
+    FfmpegAudioAdapter *-- FfmpegDecoder : delegates
+}
+
+package "YouTube Import" {
+    interface TrackImporter {
+        +importTrack(url: String): Track
+    }
+
+    class YtDlpAudioAdapter {
+        -client: YtDlpClient
+        +importTrack(url: String): Track
+    }
+
+    class YtDlpClient {
+        +download(url: String, directory: Path): Path
+    }
+
+    class MusicLibraryFacade {
+        -youtubeImporter: TrackImporter
+        +importFromYouTube(url: String): void
+    }
+
+    YtDlpAudioAdapter ..|> TrackImporter
+    MusicLibraryFacade --> TrackImporter : uses
+    YtDlpAudioAdapter *-- YtDlpClient : delegates
+}
+
+@enduml

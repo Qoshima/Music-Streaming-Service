@@ -1,0 +1,45 @@
+@startuml
+!theme plain
+left to right direction
+skinparam linetype ortho
+skinparam shadowing false
+title Strategy Pattern
+
+interface PlaybackStrategy {
+    +nextIndex(currentIndex: int, playlistSize: int): int
+}
+
+class SequentialStrategy {
+    +nextIndex(currentIndex: int, playlistSize: int): int
+}
+
+class ShuffleStrategy {
+    -random: Random
+    +nextIndex(currentIndex: int, playlistSize: int): int
+}
+
+class MusicLibraryFacade {
+    -strategy: PlaybackStrategy
+    -activePlaylist: Playlist
+    -currentTrackIndex: int
+    +setPlaybackStrategy(strategy: PlaybackStrategy): void
+    +playNextInPlaylist(): void
+}
+
+class Playlist {
+    -tracks: List<Track>
+    +getTracks(): List<Track>
+}
+
+SequentialStrategy ..|> PlaybackStrategy
+ShuffleStrategy ..|> PlaybackStrategy
+
+MusicLibraryFacade --> PlaybackStrategy : strategy
+MusicLibraryFacade --> Playlist : activePlaylist
+
+note bottom of MusicLibraryFacade
+  Auto Next delegates track selection
+  to the selected PlaybackStrategy.
+end note
+
+@enduml

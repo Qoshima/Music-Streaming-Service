@@ -1,0 +1,57 @@
+@startuml
+!theme plain
+left to right direction
+skinparam linetype ortho
+skinparam shadowing false
+title Decorator Pattern
+
+interface AudioProcessor {
+    +process(event: AudioEvent): boolean
+    +processingFinished(): void
+}
+
+class BaseAudioProcessor {
+    +process(event: AudioEvent): boolean
+}
+
+abstract class AudioEffectDecorator {
+    #wrapped: AudioProcessor
+    -enabled: boolean
+    +setEnabled(enabled: boolean): void
+    +process(event: AudioEvent): boolean
+    #applyEffect(event: AudioEvent): void
+}
+
+class EchoDecorator {
+    -delay: float[]
+    +reset(): void
+    #applyEffect(event: AudioEvent): void
+}
+
+class FadeInDecorator {
+    -processed: AtomicLong
+    +reset(): void
+    #applyEffect(event: AudioEvent): void
+}
+
+class VolumeDecorator {
+    -volume: int
+    +setVolume(volume: int): void
+    +getVolume(): int
+    #applyEffect(event: AudioEvent): void
+}
+
+BaseAudioProcessor ..|> AudioProcessor
+AudioEffectDecorator ..|> AudioProcessor
+AudioEffectDecorator --> AudioProcessor : wrapped
+
+EchoDecorator --|> AudioEffectDecorator
+FadeInDecorator --|> AudioEffectDecorator
+VolumeDecorator --|> AudioEffectDecorator
+
+note bottom of VolumeDecorator
+  Runtime chain:
+  Volume(FadeIn(Echo(Base)))
+end note
+
+@enduml
