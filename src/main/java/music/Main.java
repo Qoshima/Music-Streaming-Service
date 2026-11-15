@@ -24,6 +24,7 @@ public class Main {
         // Initialize music library.
         MusicCatalog catalog = new MusicCatalog();
         MusicDataLoader.loadInitialData(catalog);
+        MusicDataLoader.loadDownloadedTracks(catalog);
         PlaylistStorage.load(catalog);
 
         // Initialize Facade and Observer.
@@ -131,6 +132,15 @@ public class Main {
                             return;
                         }
 
+                        case "youtube", "yt" -> {
+                            if (argument.isEmpty()) {
+                                System.out.println("Usage: youtube <YouTube URL>");
+                            } else {
+                                player.importFromYouTube(argument);
+                            }
+                        }
+
+
                         default -> System.out.println(
                                 "Unknown command. Type 'help'."
                         );
@@ -197,6 +207,7 @@ public class Main {
         System.out.println(" help                     Show commands");
         System.out.println(" exit                     Close the player");
         System.out.println("----------------------------------------------");
+        System.out.println(" youtube <URL>            Download audio and lyrics");
     }
 
     // =========================================

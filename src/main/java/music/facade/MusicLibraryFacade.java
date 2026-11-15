@@ -10,6 +10,8 @@ import music.player.AudioEngine;
 import music.strategy.PlaybackStrategy;
 import music.strategy.SequentialStrategy;
 import music.data.PlaylistStorage;
+import music.adapter.TrackImporter;
+import music.adapter.YtDlpAudioAdapter;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,6 +38,9 @@ public class MusicLibraryFacade {
 
     private Playlist activePlaylist;
     private int currentTrackIndex = -1;
+
+    private final TrackImporter youtubeImporter =
+            new YtDlpAudioAdapter();
 
     // Periodically send playback position to observers.
     private final ScheduledExecutorService lyricsTimer =
@@ -289,4 +294,28 @@ public class MusicLibraryFacade {
         }
     }
 
+    public synchronized void importFromYouTube(String url) {
+        try {
+            Track track = youtubeImporter.importTrack(url);
+
+            if (catalog.findTrackByTitle(track.getTitle()) == null) {
+                catalog.addTrack(track);
+            }
+
+            System.out.println(
+                    "YouTube track imported: " + track.getTitle()
+            );
+
+            // Play downloaded audio using the existing player.
+            playLocalFile(track.getFilePath());
+
+        } catch (IOException e) {
+            System.err.println(
+                    "Download error: " + e.getMessage()
+            );
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("Download interrupted.");
+        }
+    }
 }
