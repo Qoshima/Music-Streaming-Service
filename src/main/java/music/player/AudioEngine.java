@@ -14,6 +14,7 @@ import music.decorator.FadeInDecorator;
 import music.decorator.VolumeDecorator;
 
 import java.nio.file.Path;
+import java.util.function.LongConsumer;
 
 public class AudioEngine {
 
@@ -26,6 +27,9 @@ public class AudioEngine {
     private volatile EchoDecorator echo;
     private volatile FadeInDecorator fade;
     private volatile VolumeDecorator volume;
+
+    private volatile LongConsumer onTrackFinished;
+    private volatile long playbackId;
 
     private volatile boolean echoEnabled;
     private volatile boolean fadeEnabled;
@@ -99,14 +103,29 @@ public class AudioEngine {
         volume = newVolume;
         dispatcher = newDispatcher;
 
+        final long startedPlaybackId = playbackId;
+
+
         Thread newWorker = new Thread(() -> {
+
+            boolean finishedNormally = false;
+
             try {
                 newDispatcher.run();
+                finishedNormally = true;
+
             } catch (Exception e) {
                 System.err.println(
-                        "Playback error: " + e.getMessage()
+                        "[AudioEngine] Playback error: " + e
                 );
+                e.printStackTrace(System.err);
             } finally {
+                // Only notify if the track finished naturally.
+                boolean shouldNotify =
+                        finishedNormally &&
+                                !stopping &&
+                                dispatcher == newDispatcher;
+
                 if (dispatcher == newDispatcher) {
                     dispatcher = null;
                     worker = null;
@@ -114,7 +133,23 @@ public class AudioEngine {
                     fade = null;
                     volume = null;
                 }
+
+                if (shouldNotify) {
+                    LongConsumer listener = onTrackFinished;
+
+                    if (listener != null) {
+                        // Separate thread avoids blocking the audio worker.
+                        Thread notificationThread = new Thread(
+                                () -> listener.accept(startedPlaybackId),
+                                "Track-Finished"
+                        );
+
+                        notificationThread.setDaemon(true);
+                        notificationThread.start();
+                    }
+                }
             }
+
         }, "Audio-Playback");
 
         worker = newWorker;
@@ -145,6 +180,7 @@ public class AudioEngine {
     }
 
     public synchronized void stop() {
+        playbackId++;
         stopping = true;
         paused = false;
 
@@ -253,4 +289,13 @@ public class AudioEngine {
     public boolean isActive() {
         return dispatcher != null && !stopping;
     }
+
+    public void setOnTrackFinished(LongConsumer listener) {
+        this.onTrackFinished = listener;
+    }
+
+    public boolean isCurrentPlayback(long id) {
+        return playbackId == id && !stopping;
+    }
+
 }

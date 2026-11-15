@@ -54,12 +54,35 @@ public class MusicLibraryFacade {
         this.catalog = catalog;
         this.audioEngine = new AudioEngine();
 
+        this.audioEngine.setOnTrackFinished(
+                this::handleFinishedTrack
+        );
+
         lyricsTimer.scheduleAtFixedRate(
                 this::updateLyrics,
                 200,
                 200,
                 TimeUnit.MILLISECONDS
         );
+    }
+
+    private synchronized void handleFinishedTrack(long playbackId) {
+
+        // Ignore events from old or manually stopped tracks.
+        if (!audioEngine.isCurrentPlayback(playbackId)) {
+            return;
+        }
+
+        // Auto Next works only while playing a playlist.
+        if (activePlaylist == null) {
+            return;
+        }
+
+        System.out.println();
+        System.out.println("Track finished. Playing next...");
+
+        // Strategy decides which track comes next.
+        playNextInPlaylist();
     }
 
     // ===========================
@@ -236,6 +259,7 @@ public class MusicLibraryFacade {
 
             currentTrack = track;
 
+            // Observer must receive the new track immediately.
             notifyObservers(track, 0);
 
             System.out.println(
@@ -246,9 +270,9 @@ public class MusicLibraryFacade {
 
         } catch (Exception e) {
             System.err.println(
-                    "Playback error: " + e.getMessage()
+                    "[Facade] Playback error: " + e
             );
-
+            e.printStackTrace(System.err);
             return false;
         }
     }
@@ -261,7 +285,7 @@ public class MusicLibraryFacade {
         audioEngine.resume();
     }
 
-    public void stop() {
+    public synchronized void stop() {
         currentTrack = null;
         audioEngine.stop();
     }
