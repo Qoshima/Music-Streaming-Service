@@ -449,33 +449,59 @@ The selected strategy is used by `MusicLibraryFacade`, including during automati
 The system uses a modular architecture organized around responsibilities and design patterns.
 
 ```mermaid
-flowchart TD
-    Main["Main / Console Interface"]
-    Facade["MusicLibraryFacade"]
+flowchart TB
+    User["User"]
+    Main["Main.java<br/>Console Interface"]
+    Facade["MusicLibraryFacade<br/>Facade Pattern"]
 
-    Catalog["MusicCatalog"]
-    Builder["PlaylistBuilder"]
-    Import["YouTube Adapter"]
-    Strategy["PlaybackStrategy"]
-    Engine["AudioEngine"]
-    Observer["LyricsDisplay"]
-
-    FFmpeg["FFmpeg Adapter"]
-    Effects["Audio Decorators"]
-    YouTube["yt-dlp"]
-
+    User --> Main
     Main --> Facade
+
+    subgraph Library["Music Library"]
+        Catalog["MusicCatalog"]
+        Builder["PlaylistBuilder<br/>Builder Pattern"]
+        Storage["PlaylistStorage"]
+        Strategy["PlaybackStrategy<br/>Sequential / Shuffle"]
+    end
+
+    subgraph Import["YouTube Integration"]
+        Adapter["YtDlpAudioAdapter<br/>Adapter Pattern"]
+        YTDLP["YtDlpClient + yt-dlp"]
+        Downloads[("Downloaded MP3 + LRC")]
+    end
+
+    subgraph Playback["Audio Playback"]
+        Engine["AudioEngine"]
+        FFmpeg["FfmpegAudioAdapter<br/>FFmpeg Decoder"]
+        Effects["Echo + Fade In + Volume<br/>Decorator Pattern"]
+        Speakers["Audio Output"]
+    end
+
+    subgraph Lyrics["Lyrics Synchronization"]
+        Observer["LyricsDisplay<br/>Observer Pattern"]
+        Parser["LrcParser"]
+        LRC[("LRC File")]
+    end
 
     Facade --> Catalog
     Facade --> Builder
-    Facade --> Import
+    Facade --> Storage
     Facade --> Strategy
-    Facade --> Engine
-    Facade --> Observer
 
-    Import --> YouTube
+    Facade --> Adapter
+    Adapter --> YTDLP
+    YTDLP --> Downloads
+    Downloads --> Catalog
+
+    Facade --> Engine
     Engine --> FFmpeg
     Engine --> Effects
+    Effects --> Speakers
+
+    Facade -->|"notify(track, position)"| Observer
+    Observer --> Parser
+    Parser --> LRC
+    Engine -.->|"playback position"| Facade
 ```
 
 ### Project Structure
