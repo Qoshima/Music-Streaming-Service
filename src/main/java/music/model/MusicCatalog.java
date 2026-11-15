@@ -30,4 +30,12 @@ public class MusicCatalog {
     public Playlist findPlaylistByName(String name) {
         return playlists.get(name.toLowerCase());
     }
+
+    public List<Track> getTracks() {
+        return new ArrayList<>(tracks);
+    }
+
+    public List<Playlist> getPlaylists() {
+        return new ArrayList<>(playlists.values());
+    }
 }

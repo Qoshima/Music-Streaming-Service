@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.io.IOException;
+import java.nio.file.Path;
 
 public class MusicLibraryFacade {
 
@@ -272,4 +273,20 @@ public class MusicLibraryFacade {
         stop();
         lyricsTimer.shutdownNow();
     }
+
+    public synchronized void playLocalFile(Path path) {
+
+        Track track = new Track(
+                path.getFileName().toString(),
+                "Local File",
+                path,
+                ""
+        );
+
+        if (playFile(track)) {
+            activePlaylist = null;
+            currentTrackIndex = -1;
+        }
+    }
+
 }
