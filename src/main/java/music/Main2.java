@@ -6,6 +6,7 @@ import music.model.MusicCatalog;
 import music.observer.LyricsDisplay;
 import music.strategy.SequentialStrategy;
 import music.strategy.ShuffleStrategy;
+import music.data.PlaylistStorage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +18,7 @@ public class Main2 {
 
         MusicCatalog catalog = new MusicCatalog();
         MusicDataLoader.loadInitialData(catalog);
+        PlaylistStorage.load(catalog); // Load saved playlists when the program starts.
 
         MusicLibraryFacade facade =
                 new MusicLibraryFacade(catalog);

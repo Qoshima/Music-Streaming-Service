@@ -9,12 +9,14 @@ import music.observer.Observer;
 import music.player.AudioEngine;
 import music.strategy.PlaybackStrategy;
 import music.strategy.SequentialStrategy;
+import music.data.PlaylistStorage;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.io.IOException;
 
 public class MusicLibraryFacade {
 
@@ -92,16 +94,27 @@ public class MusicLibraryFacade {
 
         try {
             Playlist playlist = builder.build();
+
             catalog.savePlaylist(playlist);
 
-            System.out.println(
-                    "Playlist saved: " + name
-            );
+            // Save playlist permanently.
+            try {
+                PlaylistStorage.save(playlist);
+                System.out.println(
+                        "Playlist saved successfully: " + name
+                );
+            } catch (IOException e) {
+                System.out.println(
+                        "Playlist saved only for this session: "
+                                + e.getMessage()
+                );
+            }
 
         } catch (IllegalStateException e) {
             System.out.println(e.getMessage());
         }
     }
+
 
     // ===========================
     // Strategy Pattern
