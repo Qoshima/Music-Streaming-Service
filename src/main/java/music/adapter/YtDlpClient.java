@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 public class YtDlpClient {
 
@@ -17,48 +18,136 @@ public class YtDlpClient {
         Path folder = directory.toAbsolutePath().normalize();
         Files.createDirectories(folder);
 
-        String binary = System.getenv("YT_DLP_BIN");
-        if (binary == null || binary.isBlank()) {
-            binary = "yt-dlp";
-        }
-
         String template = folder.resolve(
                 "%(title).80s [%(id)s].%(ext)s"
         ).toString();
 
-        List<String> command = List.of(
-                binary,
-                "--ignore-errors",
+        // Step 1: Download audio first.
+        List<String> audioCommand = List.of(
+                executable(),
                 "--no-playlist",
                 "--no-progress",
                 "-f", "bestaudio/best",
                 "-x",
                 "--audio-format", "mp3",
-                "--write-subs",
-                "--write-auto-subs",
-                "--sub-langs", "ru,en,kk",
-                "--sub-format", "vtt/best",
-                "--convert-subs", "lrc",
                 "-o", template,
                 "--print", "after_move:MSS_AUDIO=%(filepath)s",
                 url
         );
 
-        Process process;
+        String result = run(audioCommand);
 
-        try {
-            process = new ProcessBuilder(command)
-                    .redirectErrorStream(true)
-                    .start();
-        } catch (IOException e) {
+        if (result == null || result.isBlank()) {
             throw new IOException(
-                    "yt-dlp not found. Check installation and PATH.",
-                    e
+                    "yt-dlp did not return the MP3 path."
             );
         }
 
-        Path downloadedFile = null;
-        String lastMessage = "";
+        Path audio = Path.of(result)
+                .toAbsolutePath()
+                .normalize();
+
+        if (!audio.startsWith(folder) ||
+                !Files.isRegularFile(audio)) {
+            throw new IOException(
+                    "Downloaded MP3 was not found: " + audio
+            );
+        }
+
+        // Step 2: Download subtitles independently.
+        downloadSubtitles(url, template, audio);
+
+        return audio;
+    }
+
+    private void downloadSubtitles(
+            String url, String template, Path audio)
+            throws InterruptedException {
+
+        // Try original-language automatic captions.
+        try {
+            run(List.of(
+                    executable(),
+                    "--no-playlist",
+                    "--skip-download",
+                    "--no-progress",
+                    "--write-auto-subs",
+                    "--sub-langs", ".*-orig",
+                    "--sub-format", "vtt/best",
+                    "--convert-subs", "lrc",
+                    "-o", template,
+                    url
+            ));
+        } catch (IOException e) {
+            System.out.println(
+                    "Original captions unavailable: "
+                            + e.getMessage()
+            );
+        }
+
+        if (hasLrc(audio)) {
+            return;
+        }
+
+        // Fallback: subtitles uploaded by the video creator.
+        try {
+            run(List.of(
+                    executable(),
+                    "--no-playlist",
+                    "--skip-download",
+                    "--no-progress",
+                    "--write-subs",
+                    "--sub-langs", "all,-live_chat",
+                    "--sub-format", "vtt/best",
+                    "--convert-subs", "lrc",
+                    "-o", template,
+                    url
+            ));
+        } catch (IOException e) {
+            System.out.println(
+                    "Manual subtitles unavailable: "
+                            + e.getMessage()
+            );
+        }
+    }
+
+    private boolean hasLrc(Path audio) {
+        String filename = audio.getFileName().toString();
+        String base = filename.substring(
+                0, filename.lastIndexOf('.')
+        );
+
+        try (Stream<Path> files = Files.list(audio.getParent())) {
+            return files.anyMatch(file -> {
+                String name = file.getFileName().toString();
+
+                return Files.isRegularFile(file) &&
+                        (name.equals(base + ".lrc") ||
+                                (name.startsWith(base + ".") &&
+                                        name.endsWith(".lrc")));
+            });
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private String executable() {
+        String configured = System.getenv("YT_DLP_BIN");
+
+        return configured == null || configured.isBlank()
+                ? "yt-dlp"
+                : configured;
+    }
+
+    private String run(List<String> command)
+            throws IOException, InterruptedException {
+
+        Process process = new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .start();
+
+        String audioPath = null;
+        String lastLine = "Unknown error";
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(
@@ -69,12 +158,12 @@ public class YtDlpClient {
 
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith("MSS_AUDIO=")) {
-                    downloadedFile = Path.of(
-                            line.substring("MSS_AUDIO=".length())
-                    ).toAbsolutePath().normalize();
-                } else {
+                    audioPath = line.substring(
+                            "MSS_AUDIO=".length()
+                    );
+                } else if (!line.isBlank()) {
                     System.out.println("[yt-dlp] " + line);
-                    lastMessage = line;
+                    lastLine = line;
                 }
             }
         }
@@ -90,16 +179,10 @@ public class YtDlpClient {
 
         if (code != 0) {
             throw new IOException(
-                    "yt-dlp failed: " + lastMessage
+                    lastLine + " (exit code " + code + ")"
             );
         }
 
-        if (downloadedFile == null ||
-                !downloadedFile.startsWith(folder) ||
-                !Files.isRegularFile(downloadedFile)) {
-            throw new IOException("Downloaded audio not found.");
-        }
-
-        return downloadedFile;
+        return audioPath;
     }
 }

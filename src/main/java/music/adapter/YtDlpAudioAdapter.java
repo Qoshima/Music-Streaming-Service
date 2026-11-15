@@ -8,7 +8,10 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Comparator;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 public class YtDlpAudioAdapter implements TrackImporter {
 
@@ -20,85 +23,97 @@ public class YtDlpAudioAdapter implements TrackImporter {
 
         validateUrl(url);
 
-        Path folder = Path.of("music", "downloads");
-        Path audioFile = client.download(url, folder);
+        Path audio = client.download(
+                url, Path.of("music", "downloads")
+        );
 
-        String filename = audioFile.getFileName().toString();
+        String filename = audio.getFileName().toString();
         int dot = filename.lastIndexOf('.');
 
         String title = dot >= 0
                 ? filename.substring(0, dot)
                 : filename;
 
-        // Existing LyricsDisplay expects the same base filename.
-        Path lyricsFile = audioFile.resolveSibling(
-                title + ".lrc"
-        );
+        // LyricsDisplay expects: <audio-base-name>.lrc
+        Path lyrics = audio.resolveSibling(title + ".lrc");
 
-        boolean foundLyrics = false;
+        if (!Files.isRegularFile(lyrics)) {
 
-        for (String language : new String[]{"ru", "en", "kk"}) {
-            Path subtitles = audioFile.resolveSibling(
-                    title + "." + language + ".lrc"
-            );
+            try (Stream<Path> files = Files.list(audio.getParent())) {
 
-            if (Files.isRegularFile(subtitles)) {
-                Files.copy(
-                        subtitles,
-                        lyricsFile,
-                        StandardCopyOption.REPLACE_EXISTING
-                );
+                Optional<Path> candidate = files
+                        .filter(Files::isRegularFile)
+                        .filter(path -> {
+                            String name = path.getFileName().toString();
 
-                foundLyrics = true;
-                break;
+                            return name.startsWith(title + ".") &&
+                                    name.endsWith(".lrc");
+                        })
+                        .sorted(Comparator.comparing(
+                                path -> !path.getFileName().toString()
+                                        .endsWith("-orig.lrc")
+                        ))
+                        .findFirst();
+
+                if (candidate.isPresent()) {
+                    Files.copy(
+                            candidate.get(),
+                            lyrics,
+                            StandardCopyOption.REPLACE_EXISTING
+                    );
+                }
             }
         }
 
-        System.out.println("Audio: " + audioFile);
+        System.out.println("Audio saved: " + audio);
 
-        if (foundLyrics || Files.isRegularFile(lyricsFile)) {
-            System.out.println("Lyrics: " + lyricsFile);
+        if (Files.isRegularFile(lyrics)) {
+            System.out.println("Lyrics saved: " + lyrics);
         } else {
             System.out.println(
-                    "No subtitles available for this video."
+                    "Lyrics unavailable. Audio saved successfully."
             );
         }
 
-        return new Track(title, "YouTube", audioFile, "");
+        return new Track(title, "YouTube", audio, "");
     }
 
     private void validateUrl(String url) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException(
+                    "YouTube URL is required."
+            );
+        }
+
         URI uri;
 
         try {
             uri = URI.create(url);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
-                    "Invalid YouTube URL"
+                    "Invalid YouTube URL."
             );
         }
 
         String host = uri.getHost();
 
-        if (!"https".equalsIgnoreCase(uri.getScheme())
-                || host == null) {
+        if (!"https".equalsIgnoreCase(uri.getScheme()) ||
+                host == null) {
             throw new IllegalArgumentException(
-                    "Use a valid HTTPS YouTube URL"
+                    "Use an HTTPS YouTube link."
             );
         }
 
         host = host.toLowerCase(Locale.ROOT);
 
-        boolean validHost =
-                host.equals("youtube.com") ||
+        if (!(host.equals("youtube.com") ||
                 host.equals("www.youtube.com") ||
                 host.equals("m.youtube.com") ||
                 host.equals("music.youtube.com") ||
-                host.equals("youtu.be");
+                host.equals("youtu.be"))) {
 
-        if (!validHost) {
             throw new IllegalArgumentException(
-                    "Only YouTube links are supported"
+                    "Only YouTube links are supported."
             );
         }
     }

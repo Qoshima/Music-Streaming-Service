@@ -1,3 +1,4 @@
+
 package music.player;
 
 import be.tarsos.dsp.AudioDispatcher;
@@ -10,6 +11,7 @@ import music.adapter.FfmpegAudioAdapter;
 import music.decorator.BaseAudioProcessor;
 import music.decorator.EchoDecorator;
 import music.decorator.FadeInDecorator;
+import music.decorator.VolumeDecorator;
 
 import java.nio.file.Path;
 
@@ -23,26 +25,33 @@ public class AudioEngine {
 
     private volatile EchoDecorator echo;
     private volatile FadeInDecorator fade;
+    private volatile VolumeDecorator volume;
 
     private volatile boolean echoEnabled;
     private volatile boolean fadeEnabled;
     private volatile boolean paused;
     private volatile boolean stopping;
 
+    private volatile int volumePercent = 100;
+
     public synchronized void play(Path file) throws Exception {
         stop();
 
         AudioDispatcher newDispatcher = source.open(file);
 
-        // Create a fresh Decorator chain for every track.
+        // Create a fresh Decorator chain.
         EchoDecorator newEcho =
                 new EchoDecorator(new BaseAudioProcessor());
 
         FadeInDecorator newFade =
                 new FadeInDecorator(newEcho);
 
+        VolumeDecorator newVolume =
+                new VolumeDecorator(newFade);
+
         newEcho.setEnabled(echoEnabled);
         newFade.setEnabled(fadeEnabled);
+        newVolume.setVolume(volumePercent);
 
         stopping = false;
         paused = false;
@@ -50,6 +59,7 @@ public class AudioEngine {
         try {
             // Pause without terminating the audio stream.
             newDispatcher.addAudioProcessor(new AudioProcessor() {
+
                 @Override
                 public boolean process(AudioEvent event) {
                     synchronized (pauseLock) {
@@ -67,16 +77,18 @@ public class AudioEngine {
                 }
 
                 @Override
-                public void processingFinished() {}
+                public void processingFinished() {
+                }
             });
 
-            // Apply both effects through one Decorator chain.
-            newDispatcher.addAudioProcessor(newFade);
+            // Process Echo, Fade In and Volume.
+            newDispatcher.addAudioProcessor(newVolume);
 
-            // Send processed audio to the speakers.
+            // Send processed audio to speakers.
             newDispatcher.addAudioProcessor(
                     new AudioPlayer(newDispatcher.getFormat())
             );
+
         } catch (Exception e) {
             newDispatcher.stop();
             throw e;
@@ -84,6 +96,7 @@ public class AudioEngine {
 
         echo = newEcho;
         fade = newFade;
+        volume = newVolume;
         dispatcher = newDispatcher;
 
         Thread newWorker = new Thread(() -> {
@@ -99,6 +112,7 @@ public class AudioEngine {
                     worker = null;
                     echo = null;
                     fade = null;
+                    volume = null;
                 }
             }
         }, "Audio-Playback");
@@ -108,6 +122,10 @@ public class AudioEngine {
 
         System.out.println("Playing: " + file.getFileName());
     }
+
+    // ===========================
+    // Playback controls
+    // ===========================
 
     public void pause() {
         if (dispatcher != null) {
@@ -124,32 +142,6 @@ public class AudioEngine {
         }
 
         System.out.println("Resumed");
-    }
-
-    public void setEcho(boolean enabled) {
-        echoEnabled = enabled;
-
-        EchoDecorator current = echo;
-        if (current != null) {
-            current.setEnabled(enabled);
-        }
-
-        System.out.println(
-                "Echo: " + (enabled ? "ON" : "OFF")
-        );
-    }
-
-    public void setFade(boolean enabled) {
-        fadeEnabled = enabled;
-
-        FadeInDecorator current = fade;
-        if (current != null) {
-            current.setEnabled(enabled);
-        }
-
-        System.out.println(
-                "Fade In: " + (enabled ? "ON" : "OFF")
-        );
     }
 
     public synchronized void stop() {
@@ -180,7 +172,70 @@ public class AudioEngine {
         worker = null;
         echo = null;
         fade = null;
+        volume = null;
     }
+
+    // ===========================
+    // Audio effects
+    // ===========================
+
+    public void setEcho(boolean enabled) {
+        echoEnabled = enabled;
+
+        EchoDecorator current = echo;
+
+        if (current != null) {
+            current.setEnabled(enabled);
+        }
+
+        System.out.println(
+                "Echo: " + (enabled ? "ON" : "OFF")
+        );
+    }
+
+    public void setFade(boolean enabled) {
+        fadeEnabled = enabled;
+
+        FadeInDecorator current = fade;
+
+        if (current != null) {
+            current.setEnabled(enabled);
+        }
+
+        System.out.println(
+                "Fade In: " + (enabled ? "ON" : "OFF")
+        );
+    }
+
+    // ===========================
+    // Volume control
+    // ===========================
+
+    public void setVolume(int percent) {
+        if (percent < 0 || percent > 100) {
+            throw new IllegalArgumentException(
+                    "Volume must be between 0 and 100"
+            );
+        }
+
+        volumePercent = percent;
+
+        VolumeDecorator current = volume;
+
+        if (current != null) {
+            current.setVolume(percent);
+        }
+
+        System.out.println("Volume: " + percent + "%");
+    }
+
+    public int getVolume() {
+        return volumePercent;
+    }
+
+    // ===========================
+    // Playback information
+    // ===========================
 
     public long getPositionMillis() {
         AudioDispatcher current = dispatcher;
@@ -198,5 +253,4 @@ public class AudioEngine {
     public boolean isActive() {
         return dispatcher != null && !stopping;
     }
-
 }

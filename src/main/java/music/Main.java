@@ -140,6 +140,37 @@ public class Main {
                             }
                         }
 
+                        case "volume" -> {
+                            if (argument.isEmpty()) {
+                                System.out.println(
+                                        "Current volume: " + player.getVolume() + "%"
+                                );
+
+                            } else if (argument.equalsIgnoreCase("up")) {
+                                player.setVolume(
+                                        Math.min(100, player.getVolume() + 10)
+                                );
+
+                            } else if (argument.equalsIgnoreCase("down")) {
+                                player.setVolume(
+                                        Math.max(0, player.getVolume() - 10)
+                                );
+
+                            } else {
+                                try {
+                                    int percent = Integer.parseInt(argument);
+                                    player.setVolume(percent);
+
+                                } catch (NumberFormatException e) {
+                                    System.out.println(
+                                            "Usage: volume <0-100> | up | down"
+                                    );
+                                }
+                            }
+                        }
+
+                        case "mute" -> player.setVolume(0);
+
 
                         default -> System.out.println(
                                 "Unknown command. Type 'help'."
@@ -201,6 +232,9 @@ public class Main {
         System.out.println("----------------- EFFECTS --------------------");
         System.out.println(" echo on/off              Toggle Echo");
         System.out.println(" fade on/off              Toggle Fade In");
+        System.out.println(" volume <0-100>           Set volume");
+        System.out.println(" volume up/down           Change by 10%");
+        System.out.println(" mute                     Mute audio");
 
         System.out.println();
         System.out.println("------------------ SYSTEM --------------------");

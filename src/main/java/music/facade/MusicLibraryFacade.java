@@ -318,4 +318,13 @@ public class MusicLibraryFacade {
             System.err.println("Download interrupted.");
         }
     }
+
+    public void setVolume(int percent) {
+        audioEngine.setVolume(percent);
+    }
+
+    public int getVolume() {
+        return audioEngine.getVolume();
+    }
+
 }
