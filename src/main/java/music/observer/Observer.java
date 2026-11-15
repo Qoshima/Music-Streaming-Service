@@ -3,5 +3,7 @@ package music.observer;
 import music.model.Track;
 
 public interface Observer {
-    void update(Track track);
+
+    void update(Track track, long positionMillis);
+
 }

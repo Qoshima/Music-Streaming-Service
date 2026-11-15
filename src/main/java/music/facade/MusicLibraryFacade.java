@@ -1,112 +1,262 @@
+
 package music.facade;
 
-import music.model.Track;
-import music.model.MusicCatalog;
 import music.builder.Playlist;
 import music.builder.PlaylistBuilder;
+import music.model.MusicCatalog;
+import music.model.Track;
 import music.observer.Observer;
-import music.strategy.PlaybackStrategy;
 import music.player.AudioEngine;
+import music.strategy.PlaybackStrategy;
+import music.strategy.SequentialStrategy;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class MusicLibraryFacade {
+
     private final MusicCatalog catalog;
     private final AudioEngine audioEngine;
-    private final List<Observer> observers;
-    private PlaybackStrategy strategy;
-    
+
+    // Observer Pattern
+    private final List<Observer> observers =
+            new CopyOnWriteArrayList<>();
+
+    private volatile Track currentTrack;
+
+    // Strategy Pattern
+    private PlaybackStrategy strategy =
+            new SequentialStrategy();
+
     private Playlist activePlaylist;
-    private int currentTrackIndex;
+    private int currentTrackIndex = -1;
+
+    // Periodically send playback position to observers.
+    private final ScheduledExecutorService lyricsTimer =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "Lyrics-Timer");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     public MusicLibraryFacade(MusicCatalog catalog) {
         this.catalog = catalog;
         this.audioEngine = new AudioEngine();
-        this.observers = new ArrayList<>();
+
+        lyricsTimer.scheduleAtFixedRate(
+                this::updateLyrics,
+                200,
+                200,
+                TimeUnit.MILLISECONDS
+        );
     }
 
-    public void playTrack(String title) {
+    // ===========================
+    // Play a single track
+    // ===========================
+
+    public synchronized void playTrack(String title) {
         Track track = catalog.findTrackByTitle(title);
-        if (track != null) {
-            notifyObservers(track);
-            playFile(track);
-            this.activePlaylist = null;
-        } else {
+
+        if (track == null) {
             System.out.println("Track not found: " + title);
+            return;
+        }
+
+        if (playFile(track)) {
+            activePlaylist = null;
+            currentTrackIndex = -1;
         }
     }
 
-    public void buildAndSavePlaylist(String name, List<String> trackTitles) {
-        PlaylistBuilder builder = new PlaylistBuilder().setName(name);
-        for (String title : trackTitles) {
+    // ===========================
+    // Builder Pattern integration
+    // ===========================
+
+    public void buildAndSavePlaylist(
+            String name, List<String> titles) {
+
+        PlaylistBuilder builder =
+                new PlaylistBuilder().setName(name);
+
+        for (String title : titles) {
             Track track = catalog.findTrackByTitle(title);
+
             if (track != null) {
                 builder.addTrack(track);
             }
         }
+
         try {
             Playlist playlist = builder.build();
             catalog.savePlaylist(playlist);
-            System.out.println("Playlist '" + name + "' saved with " + playlist.getTracks().size() + " tracks.");
+
+            System.out.println(
+                    "Playlist saved: " + name
+            );
+
         } catch (IllegalStateException e) {
-            System.out.println("Error building playlist: " + e.getMessage());
+            System.out.println(e.getMessage());
         }
     }
 
-    public void playPlaylist(String name) {
-        Playlist playlist = catalog.findPlaylistByName(name);
-        if (playlist != null) {
-            this.activePlaylist = playlist;
-            this.currentTrackIndex = 0;
-            System.out.println("Starting playlist: " + name);
-            playNextInPlaylist();
-        } else {
-            System.out.println("Playlist not found: " + name);
+    // ===========================
+    // Strategy Pattern
+    // ===========================
+
+    public synchronized void setPlaybackStrategy(
+            PlaybackStrategy strategy) {
+
+        if (strategy == null) {
+            throw new IllegalArgumentException(
+                    "Strategy cannot be null"
+            );
         }
-    }
 
-    public void playNextInPlaylist() {
-        if (activePlaylist == null || activePlaylist.getTracks().isEmpty()) return;
-        
-        Track nextTrack;
-        if (strategy != null) {
-            nextTrack = strategy.nextTrack(activePlaylist.getTracks());
-        } else {
-            if (currentTrackIndex >= activePlaylist.getTracks().size()) currentTrackIndex = 0;
-            nextTrack = activePlaylist.getTracks().get(currentTrackIndex++);
-        }
-        
-        notifyObservers(nextTrack);
-        playFile(nextTrack);
-    }
-
-    // --- Observer Management ---
-    public void registerObserver(Observer observer) {
-        observers.add(observer);
-    }
-
-    private void notifyObservers(Track track) {
-        for (Observer obs : observers) {
-            obs.update(track);
-        }
-    }
-
-    // --- Strategy Management ---
-    public void setPlaybackStrategy(PlaybackStrategy strategy) {
         this.strategy = strategy;
+
+        System.out.println(
+                "Playback strategy: " +
+                        strategy.getClass().getSimpleName()
+        );
     }
 
-    private void playFile(Track track) {
-        try {
-            audioEngine.play(track.getFilePath());
-        } catch (Exception e) {
-            System.err.println("Playback error: " + e.getMessage());
+    public synchronized void playPlaylist(String name) {
+        Playlist playlist = catalog.findPlaylistByName(name);
+
+        if (playlist == null) {
+            System.out.println("Playlist not found: " + name);
+            return;
+        }
+
+        activePlaylist = playlist;
+        currentTrackIndex = -1;
+
+        System.out.println("Starting playlist: " + name);
+
+        playNextInPlaylist();
+    }
+
+    public synchronized void playNextInPlaylist() {
+        if (activePlaylist == null ||
+                activePlaylist.getTracks().isEmpty()) {
+
+            System.out.println("No active playlist.");
+            return;
+        }
+
+        List<Track> tracks = activePlaylist.getTracks();
+
+        // Delegate selection to the current Strategy.
+        int nextIndex = strategy.nextIndex(
+                currentTrackIndex,
+                tracks.size()
+        );
+
+        Track nextTrack = tracks.get(nextIndex);
+
+        if (playFile(nextTrack)) {
+            currentTrackIndex = nextIndex;
         }
     }
-    public void pause() { audioEngine.pause(); }
-    public void resume() { audioEngine.resume(); }
-    public void stop() { audioEngine.stop(); }
-    public void setEcho(boolean enabled) { audioEngine.setEcho(enabled); }
-    public void setFade(boolean enabled) { audioEngine.setFade(enabled); }
+
+    // ===========================
+    // Observer Pattern
+    // ===========================
+
+    public void registerObserver(Observer observer) {
+        if (observer != null) {
+            observers.add(observer);
+        }
+    }
+
+    public void removeObserver(Observer observer) {
+        observers.remove(observer);
+    }
+
+    private void notifyObservers(
+            Track track, long positionMillis) {
+
+        for (Observer observer : observers) {
+            observer.update(track, positionMillis);
+        }
+    }
+
+    private void updateLyrics() {
+        Track track = currentTrack;
+
+        if (track == null || !audioEngine.isActive()) {
+            return;
+        }
+
+        try {
+            long position = audioEngine.getPositionMillis();
+
+            if (track == currentTrack) {
+                notifyObservers(track, position);
+            }
+        } catch (Exception e) {
+            System.err.println(
+                    "Lyrics update error: " + e.getMessage()
+            );
+        }
+    }
+
+    // ===========================
+    // Audio Engine integration
+    // ===========================
+
+    private boolean playFile(Track track) {
+        try {
+            currentTrack = null;
+
+            audioEngine.play(track.getFilePath());
+
+            currentTrack = track;
+
+            notifyObservers(track, 0);
+
+            System.out.println(
+                    "Now playing: " + track.getTitle()
+            );
+
+            return true;
+
+        } catch (Exception e) {
+            System.err.println(
+                    "Playback error: " + e.getMessage()
+            );
+
+            return false;
+        }
+    }
+
+    public void pause() {
+        audioEngine.pause();
+    }
+
+    public void resume() {
+        audioEngine.resume();
+    }
+
+    public void stop() {
+        currentTrack = null;
+        audioEngine.stop();
+    }
+
+    public void setEcho(boolean enabled) {
+        audioEngine.setEcho(enabled);
+    }
+
+    public void setFade(boolean enabled) {
+        audioEngine.setFade(enabled);
+    }
+
+    public void close() {
+        stop();
+        lyricsTimer.shutdownNow();
+    }
 }
