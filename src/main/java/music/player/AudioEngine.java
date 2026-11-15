@@ -181,4 +181,22 @@ public class AudioEngine {
         echo = null;
         fade = null;
     }
+
+    public long getPositionMillis() {
+        AudioDispatcher current = dispatcher;
+
+        if (current == null) {
+            return 0;
+        }
+
+        return Math.max(
+                0,
+                Math.round(current.secondsProcessed() * 1000.0)
+        );
+    }
+
+    public boolean isActive() {
+        return dispatcher != null && !stopping;
+    }
+
 }
